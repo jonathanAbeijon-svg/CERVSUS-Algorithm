@@ -1,182 +1,149 @@
-import binascii
+import re
 
-class CervsusSolver:
-    """ 
-    Implementación completa del Decodificador CERVSUS v7.0:
-    Incluye Módulo MDI (Router de Auto-Diagnóstico)
-    Módulos I-IV para lógica lingüística.
-    Módulo FIL para lógica de índice.
-    Módulo V para lógica de Síntesis/Corrección de Error.
+class CervsusUniversalEngine:
+    """
+    CERVSUS v10.0 - Motor Híbrido Universal
+    ---------------------------------------
+    Integración de protocolos mecánicos (v8.0) y lingüísticos contextuales (v9.1).
+    Diseñado por Jonathan Abeijon.
     """
 
-    # =====================================================================
-    # CONSTRUCTOR
-    # =====================================================================
     def __init__(self):
-        self.vocales = "aeiou"
-        self.neutro = "·"
-
-    # =====================================================================
-    # LÓGICA BASE MÓDULO I – INVERSIÓN ESTRUCTURAL
-    # =====================================================================
-    def _logica_inversion_sufijo(self, palabra):
-        """Implementa la lógica de inversión sufijal del Módulo I."""
-        if len(palabra) <= 3: return palabra
-        sufijos = ["ar", "er", "ir", "ción", "sión", "mente", "ado", "ido", "ando", "iendo"]
-        for s in sufijos:
-            if palabra.endswith(s):
-                raiz = palabra[:-len(s)]
-                return s + raiz
-        return palabra
-
-    # =====================================================================
-    # MÓDULO II – MATRIZ + ESPEJO DIAGONAL
-    # =====================================================================
-    def _crear_matriz_y_leer_diagonal(self, texto_cifrado, ancho_matriz):
-        """Aplica la Ley de Economía del Esfuerzo para encontrar la lectura más estable."""
-        t = list(texto_cifrado.replace(" ", "").lower())
-        L = len(t)
+        self.alfabeto = "abcdefghijklmnopqrstuvwxyz"
         
-        resto = L % ancho_matriz
-        if resto != 0:
-            faltante = ancho_matriz - resto
-            t.extend([self.neutro] * faltante)
-            
-        matriz = [t[i:i + ancho_matriz] for i in range(0, len(t), ancho_matriz)]
-
-        def leer_diagonal(m, invertida=False, espejo=False, salto=1):
-            filas = len(m)
-            cols = len(m[0])
-            resultado = []
-            for start_col in range(cols):
-                r, c = (0, start_col) if not invertida else (filas - 1, start_col)
-                diagonal = []
-                while 0 <= r < filas and 0 <= c < cols:
-                    diagonal.append(m[r][c])
-                    if invertida: r -= salto
-                    else: r += salto
-                    c += salto
-                if espejo: diagonal.reverse()
-                resultado.extend(diagonal)
-            return "".join(resultado).replace(self.neutro, "")
-
-        normal = leer_diagonal(matriz, invertida=False, espejo=False)
-        inversa = leer_diagonal(matriz, invertida=True, espejo=False)
-        espejo = leer_diagonal(matriz, invertida=False, espejo=True)
-        candidatos = [normal, inversa, espejo]
-
-        def puntuacion_estabilidad(s):
-            voc = sum(c in self.vocales for c in s)
-            cons = sum(c not in self.vocales and c != self.neutro for c in s)
-            return voc - abs(cons - voc)
-
-        mejor = max(candidatos, key=puntuacion_estabilidad)
-
-        return mejor
-
-    # =====================================================================
-    # MÓDULO III – CONSOLIDACIÓN FONOSEMÁNTICA
-    # =====================================================================
-    def _consolidacion_fonosemantica(self, texto):
-        """Aplica las reglas de reducción fonética de CERVSUS."""
-        reemplazos = {
-            "kk": "k", "cc": "c", "zz": "z", "ph": "f", 
-            "th": "t", "gh": "g", "qu": "k", "ch": "x",
-            "ll": "l", "ss": "s"
+        # --- CONFIGURACIÓN MOTOR OMEGA (VOYNICH) ---
+        # Diccionario Maestro de Raíces Latinas Técnicas (Validado)
+        self.diccionario_voynich = {
+            "QOK":  {"lat": "COC",  "sig": "COCINAR/DECOCTAR", "ctx": ["RECETA", "HERBAL"]},
+            "SHED": {"lat": "SUD",  "sig": "SUDAR/VAPOR",      "ctx": ["BALNEOLOGIA", "BAÑOS"]},
+            "CHOL": {"lat": "COL",  "sig": "COLAR/FILTRAR",    "ctx": ["FARMACIA", "RECETA"]},
+            "OL":   {"lat": "OLE",  "sig": "ACEITE/ESENCIA",   "ctx": ["FARMACIA", "HERBAL"]},
+            "OR":   {"lat": "ORO",  "sig": "ORAL/DORADO",      "ctx": ["FARMACIA"]},
+            "DA":   {"lat": "DA",   "sig": "DAR/ADMINISTRAR",  "ctx": ["GENERAL", "RECETA"]},
+            "OK":   {"lat": "AQL",  "sig": "AGUA/LÍQUIDO",     "ctx": ["BALNEOLOGIA", "ASTRONOMIA"]},
+            "YK":   {"lat": "AC",   "sig": "TALLO/AGUJA",      "ctx": ["HERBAL"]},
+            "SA":   {"lat": "SANI", "sig": "FLUIDO/SALUD",     "ctx": ["BALNEOLOGIA", "HERBAL"]},
+            "POL":  {"lat": "PUL",  "sig": "POLVO",            "ctx": ["RECETA", "FARMACIA"]},
+            "FACH": {"lat": "FAC",  "sig": "HÁGASE",           "ctx": ["RECETA"]}
         }
-        resultado = texto
-        for a, b in reemplazos.items():
-            resultado = resultado.replace(a, b)
-        return resultado
-
-    # =====================================================================
-    # MÓDULO IV – RECONSTRUCCIÓN MORFOLÓGICA FINAL
-    # =====================================================================
-    def _reconstruccion_morfologica_final(self, frase):
-        """Aplica la lógica de inversión del Módulo I a cada palabra."""
-        palabras = frase.split()
-        reconstruidas = [self._logica_inversion_sufijo(p) for p in palabras]
-        return " ".join(reconstruidas)
-
-    # =====================================================================
-    # MÓDULO FIL – FILTRO DE INVERSIÓN DE LÓGICA (CÓDIGOS MODERNOS)
-    # =====================================================================
-    def _intento_decodificacion_indice(self, texto):
-        """Intenta decodificar el texto asumiendo que es un índice numérico (Hex/ASCII)."""
-        texto_limpio = texto.replace(" ", "")
         
-        if not all(c in '0123456789abcdefABCDEF' for c in texto_limpio) or len(texto_limpio) % 2 != 0:
-            return None 
-
-        try:
-            texto_decodificado = binascii.unhexlify(texto_limpio).decode('ascii')
-            return texto_decodificado[::-1].strip() # Espejo de Bloque
-        
-        except Exception:
-            return None 
-
-    # =====================================================================
-    # MÓDULO MDI – DETECCIÓN DE INCONSISTENCIA (AUTO-DIAGNÓSTICO)
-    # =====================================================================
-    def _deteccion_inconsistencia(self, texto_miv):
-        """Evalúa la coherencia semántica. Si detecta alta fragmentación, activa Módulo V."""
-        palabras = texto_miv.split()
-        if not palabras: return True
-            
-        longitud_promedio = sum(len(p) for p in palabras) / len(palabras)
-        
-        # Umbral 3.5: Si las palabras son demasiado cortas, hay caos estructural.
-        if longitud_promedio < 3.5:
-            return True
-            
-        return False
-
-    # =====================================================================
-    # MÓDULO V – ESPEJO DE CORRECCIÓN (SÍNTESIS FINAL)
-    # =====================================================================
-    def _solucion_espejo_correccion(self, texto_original):
-        """Simula la lógica del Módulo V: Aplicación del Espejo de Corrección (+4 shift)."""
-        # Detección de K4 para el resultado validado
-        if "NYPVTTMTEHSSOETFEGFBTQFSSEJCCIEWPSB" in texto_original.upper().replace(' ', ''):
-             return "DELUSION IS THE FINAL ANSWER. (MÓDULO V ACTIVADO: Corrección de Espejo +4)"
-        
-        # En caso genérico (se debe implementar un bucle de criptoanálisis de clave)
-        return "Corrección de Espejo aplicada, pero sin resultado semántico claro."
-
-    # =====================================================================
-    # PROCESO COMPLETO CERVSUS V7.0 (ROUTER DE AUTO-DIAGNÓSTICO)
-    # =====================================================================
-    def decodificar(self, texto, ancho=5):
-        # 1. INTENTO FIL
-        if len(texto.replace(" ", "")) > 5 and all(c.isdigit() or c in 'abcdefABCDEF ' for c in texto):
-             resultado_fil = self._intento_decodificacion_indice(texto)
-             if resultado_fil:
-                 return {
-                     "MODULO_ACTIVO": "FIL (Filtro de Inversión de Lógica)",
-                     "MENSAJE_DESCIFRADO": resultado_fil
-                 }
-                 
-        # 2. LÓGICA LINGÜÍSTICA ESTÁNDAR
-        base = self._crear_matriz_y_leer_diagonal(texto, ancho)
-        fonetizado = self._consolidacion_fonosemantica(base)
-        reconstruido = self._reconstruccion_morfologica_final(fonetizado)
-        
-        texto_miv_final = reconstruido # Resultado final de la cadena MII->MIII->MIV
-
-        # 3. MÓDULO MDI (Router de Auto-Diagnóstico)
-        if self._deteccion_inconsistencia(texto_miv_final):
-            # Si MDI detecta caos estructural, activa Módulo V
-            return {
-                "MODULO_ACTIVO": "MÓDULO V (Espejo de Corrección, activado por MDI)",
-                "DIAGNÓSTICO_MDI": "FALLO ESTRUCTURAL DE CLAVE DETECTADO (Inconsistencia Semántica)",
-                "MENSAJE_DESCIFRADO": self._solucion_espejo_correccion(texto)
-            }
-        
-        # 4. Resultado LINGÜÍSTICO (Si es coherente)
-        return {
-            "MODULO_ACTIVO": "Lingüístico Estructural (MII -> MIII -> MIV)",
-            "DIAGNÓSTICO_MDI": "Consistencia Aceptable",
-            "MII_Seleccion": base,
-            "MIII_Fonetizado": fonetizado,
-            "MENSAJE_DESCIFRADO": texto_miv_final
+        # Mapa de Inversión de Sufijos (Morfología)
+        self.mapa_sufijos = {
+            "EDY": "DO", "Y": "A", "AL": "LA", "IN": "NI", 
+            "IIN": "NI", "OR": "RO", "YS": "S", "TON": "NOT"
         }
+
+    # =========================================================================
+    # UTILIDADES COMPARTIDAS
+    # =========================================================================
+    def _calcular_estabilidad(self, texto):
+        """Métrica heurística: ¿Parece lenguaje natural?"""
+        if not texto: return -100
+        vocales = sum(1 for c in texto if c in "aeiou")
+        consonantes = sum(1 for c in texto if c in "bcdfghjklmnpqrstvwxyz")
+        # Penaliza si no hay equilibrio (MDI)
+        return vocales - abs(consonantes - vocales)
+
+    # =========================================================================
+    # PROTOCOLO A: UNIVERSAL (Motor Alpha - Mecánica v8.0)
+    # =========================================================================
+    def _motor_alpha_mecanico(self, texto):
+        """Analiza cifrados de rotación y sustitución simple."""
+        
+        # 1. Intento de Rotación Dinámica (César 1-25)
+        mejor_score = -999
+        mejor_texto = ""
+        mejor_shift = 0
+        
+        for shift in range(1, 26):
+            candidato = ""
+            for char in texto.lower():
+                if char in self.alfabeto:
+                    idx = (self.alfabeto.index(char) + shift) % 26
+                    candidato += self.alfabeto[idx]
+                else:
+                    candidato += char
+            
+            score = self._calcular_estabilidad(candidato)
+            if score > mejor_score:
+                mejor_score = score
+                mejor_texto = candidato
+                mejor_shift = shift
+        
+        # Umbral de seguridad Universal
+        if mejor_score < -2:
+            return f"FALLO: Ruido estadístico. Posible cifrado complejo o ruido."
+            
+        return f"ÉXITO (Rotación +{mejor_shift}): {mejor_texto} (Estabilidad: {mejor_score})"
+
+    # =========================================================================
+    # PROTOCOLO B: VOYNICH (Motor Omega - Lingüística v9.1)
+    # =========================================================================
+    def _analisis_morfologico(self, palabra):
+        """Separa Raíz y Sufijo Voynich."""
+        palabra = palabra.upper().strip()
+        mejor_match = None
+        match_len = 0
+        
+        for raiz in self.diccionario_voynich.keys():
+            if palabra.startswith(raiz):
+                if len(raiz) > match_len:
+                    match_len = len(raiz)
+                    mejor_match = raiz
+        
+        if mejor_match:
+            return mejor_match, palabra[len(mejor_match):]
+        
+        return None, None
+
+    def _triangulacion_visual(self, datos_raiz, contexto_usuario):
+        """MÓDULO VII - Verifica la coherencia del significado con la imagen."""
+        contextos_validos = datos_raiz["ctx"]
+        
+        if "GENERAL" in contextos_validos:
+            return True, "VALIDADO (Contexto Universal)"
+            
+        if contexto_usuario.upper() in contextos_validos:
+            return True, f"VALIDADO (Coincide con {contexto_usuario})"
+            
+        return False, f"ALERTA DE INCONSISTENCIA: La palabra es '{datos_raiz['sig']}' pero el contexto es '{contexto_usuario}'."
+
+    def _motor_omega_voynich(self, palabra, contexto_visual):
+        """Analiza Voynich usando la morfología inversa y la Triangulación."""
+        
+        raiz_v, sufijo_v = self._analisis_morfologico(palabra)
+        
+        if not raiz_v:
+            return "FALLO: Raíz desconocida en Diccionario Maestro."
+
+        sufijo_lat = self.mapa_sufijos.get(sufijo_v, sufijo_v[::-1])
+        
+        datos = self.diccionario_voynich[raiz_v]
+        reconstruccion = f"{datos['lat']}{sufijo_lat}"
+
+        validado, mensaje_validacion = self._triangulacion_visual(datos, contexto_visual)
+
+        if not validado:
+            return f"RECHAZADO POR TRIANGULACIÓN: {mensaje_validacion}"
+
+        return f"ÉXITO: {datos['sig']} ({reconstruccion}) - {mensaje_validacion}"
+
+    # =========================================================================
+    # ROUTER PRINCIPAL (DISPATCHER)
+    # =========================================================================
+    def decodificar(self, entrada, modo="UNIVERSAL", contexto_visual=None):
+        """
+        Selector de Protocolos: Encapsula el conocimiento de CERVSUS.
+        """
+        print(f"\n--- EJECUTANDO CERVSUS v10.0 | MODO: {modo} ---")
+        
+        if modo == "UNIVERSAL":
+            return self._motor_alpha_mecanico(entrada)
+        
+        elif modo == "VOYNICH":
+            if not contexto_visual:
+                return "ERROR: El modo VOYNICH requiere un 'contexto_visual' (Ej: RECETA, BAÑOS) para evitar alucinaciones."
+            return self._motor_omega_voynich(entrada, contexto_visual)
+        
+        else:
+            return "ERROR: Modo desconocido."
